@@ -1,3 +1,6 @@
+# For custom firmware, atc1441 format
+# lywsd03mmc also changed to include bat % and V
+##
 from exceptions import DeviceTimeoutError
 from mqtt import MqttMessage, MqttConfigMessage
 
@@ -11,10 +14,12 @@ from contextlib import contextmanager
 
 REQUIREMENTS = ["bluepy"]
 
-ATTR_BATTERY = "battery"
+#ATTR_BATTERY = "battery"
+battery_level = "battery_level"
+battery_voltage = "battery_voltage"
 ATTR_LOW_BATTERY = 'low_battery'
 
-monitoredAttrs = ["temperature", "humidity", ATTR_BATTERY]
+monitoredAttrs = ["temperature", "humidity", "battery_level", "battery_voltage"]
 _LOGGER = logger.get(__name__)
 
 class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
@@ -46,7 +51,7 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
         device = {
             "identifiers": [mac, self.format_discovery_id(mac, name)],
             "manufacturer": "Xiaomi",
-            "model": "Mijia Lywsd03Mmc",
+            "model": "Mijia LYWSD03MMC",
             "name": self.format_discovery_name(name),
         }
 
@@ -59,13 +64,14 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
             }
 
             if attr == "humidity":
-                payload.update({"icon": "mdi:water", "unit_of_measurement": "%"})
+                payload.update({"device_class": "humidity", "unit_of_measurement": "%"})
             elif attr == "temperature":
                 payload.update(
-                    {"device_class": "temperature", "unit_of_measurement": "°C"}
-                )
-            elif attr == ATTR_BATTERY:
-                payload.update({"device_class": "battery", "unit_of_measurement": "V"})
+                    {"device_class": "temperature", "unit_of_measurement": "°C"})
+            elif attr == "battery_level":
+                payload.update({"device_class": "battery", "unit_of_measurement": "%"})
+            elif attr == "battery_voltage":
+                payload.update({"device_class": "voltage", "unit_of_measurement": "V"})
 
             ret.append(
                 MqttConfigMessage(
@@ -75,19 +81,19 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
                 )
             )
 
-        ret.append(
-            MqttConfigMessage(
-                MqttConfigMessage.BINARY_SENSOR,
-                self.format_discovery_topic(mac, name, ATTR_LOW_BATTERY),
-                payload={
-                    "unique_id": self.format_discovery_id(mac, name, ATTR_LOW_BATTERY),
-                    "state_topic": self.format_prefixed_topic(name, ATTR_LOW_BATTERY),
-                    "name": self.format_discovery_name(name, ATTR_LOW_BATTERY),
-                    "device": device,
-                    "device_class": "battery",
-                },
-            )
-        )
+#        ret.append(
+#            MqttConfigMessage(
+#                MqttConfigMessage.BINARY_SENSOR,
+#                self.format_discovery_topic(mac, name, ATTR_LOW_BATTERY),
+#                payload={
+#                    "unique_id": self.format_discovery_id(mac, name, ATTR_LOW_BATTERY),
+#                    "state_topic": self.format_prefixed_topic(name, ATTR_LOW_BATTERY),
+#                    "name": self.format_discovery_name(name, ATTR_LOW_BATTERY),
+#                    "device": device,
+#                    "device_class": "battery",
+#                },
+#            )
+#        )
 
         return ret
 
@@ -98,13 +104,15 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
         if self.passive:
             scanner = btle.Scanner()
             results = scanner.scan(self.scan_timeout if hasattr(self, 'scan_timeout') else 20.0, passive=True)
-
+            _LOGGER.debug("!!!!!Scanned in self.passive!!!!!")
             for res in results:
                 device = self.find_device(res.addr)
                 if device:
                     for (adtype, desc, value) in res.getScanData():
+                        _LOGGER.debug(f"values are: {value}")
                         if ("1a18" in value):
                             _LOGGER.debug("%s - received scan data %s", res.addr, value)
+# This gets process scanned values in the other worker
                             device.processScanValue(value)
 
         for name, device in self.devices.items():
@@ -145,8 +153,11 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
                 attrValue = device.getHumidity()
             elif attr == "temperature":
                 attrValue = device.getTemperature()
-            elif attr == ATTR_BATTERY:
-                attrValue = device.getBattery()
+            elif attr == battery_level:
+                attrValue = device.getBattery_level()
+            elif attr == battery_voltage:
+                attrValue = device.getBattery_voltage()
+
 
             ret.append(
                 MqttMessage(
@@ -156,11 +167,11 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
             )
 
         # Low battery binary sensor
-        ret.append(
-            MqttMessage(
-                topic=self.format_topic(name, ATTR_LOW_BATTERY),
-                payload=self.true_false_to_ha_on_off(device.getBattery() < 3),
-            )
-        )
+#        ret.append(
+#            MqttMessage(
+#                topic=self.format_topic(name, ATTR_LOW_BATTERY),
+#                payload=self.true_false_to_ha_on_off(device.getBattery() < 3),
+#            )
+#        )
 
         return ret

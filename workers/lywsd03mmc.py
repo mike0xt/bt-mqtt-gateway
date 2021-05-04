@@ -58,7 +58,8 @@ class lywsd03mmc:
 
         self._temperature = None
         self._humidity = None
-        self._battery = None
+        self._battery_level = None
+        self._battery_voltage = None
 
     @contextmanager
     def connected(self):
@@ -75,23 +76,26 @@ class lywsd03mmc:
         if self.passive:
             temperature = self.getTemperature()
             humidity = self.getHumidity()
-            battery = self.getBattery()
+            battery_level = self.getBattery_level()
+            battery_voltage = self.getBattery_voltage()
         else:
             with self.connected() as device:
                 self.getData(device)
                 temperature = self.getTemperature()
                 humidity = self.getHumidity()
-                battery = self.getBattery()
+                battery_level = self.getBattery_level()
+                battery_voltage = self.getBattery_voltage()
 
-        if temperature and humidity and battery:
-            _LOGGER.debug("%s - found values %f, %d, %d", self.mac, temperature, humidity, battery)
+        if temperature and humidity and battery_level and battery_voltage:
+            _LOGGER.debug("%s - found values %s, %s, %s, %s", self.mac, temperature, humidity, battery_level, battery_voltage)
         else:
             _LOGGER.debug("%s - no data received", self.mac)
 
         return {
             "temperature": temperature,
             "humidity": humidity,
-            "battery": battery,
+            "battery_level": battery_level,
+            "battery_voltage": battery_voltage,
         }
 
     def getData(self, device):
@@ -99,7 +103,7 @@ class lywsd03mmc:
         while True:
             if device.waitForNotifications(self.command_timeout):
                 break
-        return self._temperature, self._humidity, self._battery
+        return self._temperature, self._humidity, self._battery_level, self._battery_voltage
 
     def getTemperature(self):
         return self._temperature;
@@ -107,26 +111,35 @@ class lywsd03mmc:
     def getHumidity(self):
         return self._humidity;
 
-    def getBattery(self):
-        return self._battery;
+    def getBattery_level(self):
+        return self._battery_level;
+
+    def getBattery_voltage(self):
+        return self._battery_voltage;
 
     def subscribe(self, device):
         device.setDelegate(self)
 
     def processScanValue(self, data):
+        _LOGGER.debug("!!!!ProcessScanValue: calc temp, humidity, and bat!!!!!")
+        _LOGGER.debug(f"!!!!Data is {data}!!!!")
         temperature = int(data[16:20], 16) / 10
         humidity = int(data[20:22], 16)
-        battery = int(data[22:24], 16)
+        battery_level = int(data[22:24], 16)
+        battery_voltage = int(data[24:28], 16) / 1000
+        _LOGGER.debug(f"!!!!!Calculated: T={temperature}, H={humidity}, BL={battery_level}, BV={battery_voltage}")
 
         self._temperature = round(temperature, 1)
-        self._humidity = round(humidity)
-        self._battery = round(battery, 4)
+        self._humidity = round(humidity,1)
+        self._battery_level = round(battery_level, 1)
+        self._battery_voltage = round(battery_voltage, 4)
 
     def handleNotification(self, handle, data):
+        _LOGGER.debug("!!!!!handleNotification: temp, humiditiy, and bat!!!!!")
         temperature = int.from_bytes(data[0:2], byteorder='little', signed=True) / 100
         humidity = int.from_bytes(data[2:3], byteorder='little')
-        battery = int.from_bytes(data[3:5], byteorder='little') / 1000
+        battery_level = int.from_bytes(data[3:5], byteorder='little') / 1000
 
         self._temperature = round(temperature, 1)
         self._humidity = round(humidity)
-        self._battery = round(battery, 4)
+        self._battery_level = round(battery, 4)
